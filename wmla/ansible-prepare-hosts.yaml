@@ -1,0 +1,111 @@
+---
+# This ansible playbook will install the Conductor cluster
+
+- name: Inventory and variables validation
+  hosts: localhost
+  gather_facts: false
+  tasks:
+  - fail:
+     msg: "Group masterhost must be defined"
+    when: "'masterhost' not in groups"
+
+  - assert:
+     that:
+      - "groups['masterhost'] | length == 1"
+     fail_msg: "Group masterhost must contain only 1 host"
+
+  - assert:
+     that:
+      - scripts_dir is defined
+     fail_msg: "Variable scripts_dir must be defined"
+
+  - assert:
+     that:
+      - install_dir is defined
+     fail_msg: "Variable install_dir must be defined"
+
+  - assert:
+     that:
+      - cluster_admin is defined
+     fail_msg: "Variable cluster_admin must be defined"
+
+  - assert:
+     that:
+      - install_type is defined and (install_type == "local" or install_type == "shared")
+     fail_msg: "Variable install_type must be defined as local or shared"
+
+  - assert:
+     that:
+      - update_ssl is defined and (update_ssl == "enabled" or update_ssl == "disabled")
+     fail_msg: "Variable update_ssl must be defined as enabled or disabled"
+
+- name: Prepare hosts
+  hosts: all
+  become: yes
+
+#  tasks:
+#  - name: execute prepare-host.sh
+#    command: "{{ scripts_dir }}/prepare-host.sh"
+  tasks:
+  - name: Print cluster admin
+    ansible.builtin.debug:
+      msg: Cluste Admin is {{ cluster_admin }}
+
+  - name: Ensure group cluster admin group exists
+    ansible.builtin.group:
+      name: "{{ cluster_admin }}"
+      state: present
+  
+  - name: Ensure cluster admin exists
+    ansible.builtin.user:
+      name: "{{ cluster_admin }}"
+      comment: "cluster admin - {{ cluster_admin }}"
+      group: "{{ cluster_admin }}"
+
+  - name: Install a list of packages
+    yum:
+      name:
+        - openssl
+        - curl
+        - gettext
+        - bind-utils
+        - iproute
+        - net-tools
+        - dejavu-serif-fonts
+        - bzip2
+        - ed
+        - sudo
+        - zip
+        - wget
+      state: present
+
+  - name: configure system settings, file descriptors and number of threads
+    pam_limits:
+      dest: "/etc/security/limits.d/99-spectrum.conf"
+      domain: "{{item.domain}}"
+      limit_type: "{{item.limit_type}}"
+      limit_item: "{{item.limit_item}}"
+      value: "{{item.value}}"
+    with_items:
+      - { domain: 'root', limit_type: 'soft', limit_item: 'nproc', value: 65536 }
+      - { domain: 'root', limit_type: 'hard', limit_item: 'nproc', value: 65536 }      
+      - { domain: 'root', limit_type: 'soft', limit_item: 'nofile', value: 65536 }
+      - { domain: 'root', limit_type: 'hard', limit_item: 'nofile', value: 65536 }
+      - { domain: "{{ cluster_admin }}", limit_type: 'soft', limit_item: 'nproc', value: 65536 }
+      - { domain: "{{ cluster_admin }}", limit_type: 'hard', limit_item: 'nproc', value: 65536 }      
+      - { domain: "{{ cluster_admin }}", limit_type: 'soft', limit_item: 'nofile', value: 65536 }
+      - { domain: "{{ cluster_admin }}", limit_type: 'hard', limit_item: 'nofile', value: 65536 }
+
+  - name: Execute the ulimit command in a remote shell
+    ansible.builtin.shell: ulimit -n 65536
+
+  - name: Execute the ulimit command in a remote shell
+    ansible.builtin.shell: ulimit -u 65536
+
+  - name: Execute the ulimit command in a remote shell
+    ansible.builtin.shell: su -l "{{ cluster_admin }}" -c "ulimit -n 65536"
+
+  - name: Execute the ulimit command in a remote shell
+    ansible.builtin.shell: su -l "{{ cluster_admin }}" -c "ulimit -u 65536"
+
+
